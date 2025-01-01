@@ -1,7 +1,10 @@
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
 -- Pembolehubah
 local espEnabled = false
@@ -10,6 +13,7 @@ local hitboxSizeMultiplier = 1
 local espColor = Color3.fromRGB(0, 0, 255) -- Biru
 local hitboxColor = Color3.fromRGB(255, 0, 0) -- Merah
 local gui, scanFrame
+local partDetectionEnabled = false
 
 -- Senarai warna yang tersedia
 local colors = {
@@ -31,31 +35,9 @@ local colors = {
     ["hitam"] = Color3.fromRGB(0, 0, 0),
 }
 
--- Fungsi untuk mencetak hasil imbasan
-local function printScanResults()
-    local playerCount = #Players:GetPlayers()
-    local playerId = LocalPlayer.UserId
-    local lagStatus = math.random() > 0.5 and "No Lag" or "Lag Detected"
-    
-    print("Scanning...")
-    print(string.format("Player ID: %d", playerId))
-    print(string.format("Player Count: %d", playerCount))
-    print(string.format("Lag Status: %s", lagStatus))
-end
-
--- Fungsi untuk menunjukkan bingkai imbasan
-local function displayScanFrame()
-    scanFrame.Visible = true
-    wait(3)
-    scanFrame.Visible = false
-end
-
 -- Fungsi untuk toggle ESP
 local function toggleESP()
     espEnabled = not espEnabled
-    printScanResults()
-    displayScanFrame()
-    
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             for _, part in ipairs(player.Character:GetChildren()) do
@@ -83,9 +65,6 @@ end
 
 -- Fungsi untuk toggle hitboxes
 local function toggleHitboxes()
-    printScanResults()
-    displayScanFrame()
-    
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local hitbox = player.Character:FindFirstChild("HumanoidRootPart")
@@ -93,6 +72,10 @@ local function toggleHitboxes()
                 hitbox.Size = Vector3.new(2, 2, 1) * hitboxSizeMultiplier
                 hitbox.Color3 = hitboxColor
                 hitbox.Transparency = 0.5
+                local highlight = Instance.new("SelectionBox", hitbox)
+                highlight.Adornee = hitbox
+                highlight.LineThickness = 0.1
+                highlight.Color3 = hitboxColor
             end
         end
     end
@@ -101,13 +84,20 @@ end
 -- Fungsi untuk menjadikan GUI boleh digerakkan
 local function makeDraggable(frame)
     local dragging = false
-    local dragInput, mousePos, framePos
+    local dragInput
+    local dragStart
+    local startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
 
     frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            mousePos = input.Position
-            framePos = frame.Position
+            dragStart = input.Position
+            startPos = frame.Position
 
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
@@ -118,23 +108,26 @@ local function makeDraggable(frame)
     end)
 
     frame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
-            local delta = input.Position - mousePos
-            frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+            update(input)
         end
     end)
 end
 
 -- Penyiapan GUI
 local function createGUI()
-    gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+    if gui then gui:Destroy() end
+
+    gui = Instance.new("ScreenGui")
     gui.Name = "UtilityGUI"
+    gui.ResetOnSpawn = false
+    gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
     local frame = Instance.new("Frame", gui)
     frame.Size = UDim2.new(0, 300, 0, 200)
@@ -154,7 +147,7 @@ local function createGUI()
     title.TextScaled = true
     title.Active = true
 
-    makeDraggable(frame)
+    makeDraggable(frame)  -- Jadikan keseluruhan bingkai boleh digerakkan
 
     local closeButton = Instance.new("TextButton", frame)
     closeButton.Size = UDim2.new(0, 30, 0, 30)
@@ -232,6 +225,15 @@ local function processChatCommand(message)
             hitboxColor = colors[args[2]:lower()]
             print("Hitbox color set to:", args[2])
         end
+    elseif args[1] == "/refresh" then
+        createGUI()
+        print("GUI refreshed")
+    elseif args[1] == "/parton" then
+        partDetectionEnabled = true
+        print("Part detection enabled")
+    elseif args[1] == "/partoff" then
+        partDetectionEnabled = false
+        print("Part detection disabled")
     end
 end
 
@@ -249,3 +251,16 @@ LocalPlayer.Chatted:Connect(function(message)
         processChatCommand(message)
     end
 end)
+
+-- Fungsi untuk mengesan sentuhan part
+local function enablePartDetection()
+    if Character then
+        Character:FindFirstChildOfClass("Humanoid").Touched:Connect(function(hit)
+            if partDetectionEnabled and hit:IsA("BasePart") then
+                print("Touched part:", hit.Name)
+            end
+        end)
+    end
+end
+
+enablePartDetection()
